@@ -36,11 +36,13 @@ def main():
         msg = s.recv_json()
         if msg['op'] == 'list':
             s.send_json({"files": list(files.keys())})
+
         elif msg['op'] == 'download':
             with open(sys.argv[1]+msg['file'], 'rb') as input:
                 data = input.read()
                 s.send(data)
                 input.close()
+
         elif msg['op'] == 'download_by_parts':
             with open(sys.argv[1] + '/' + msg['file'], 'rb') as input:
                 input.seek(0,2)
@@ -50,6 +52,7 @@ def main():
                 'parts': parts
             })
             input.close()
+            
         elif msg['op'] == 'download_part':
             fileName = msg['file']
             part = msg['part']
