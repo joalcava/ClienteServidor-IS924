@@ -59,7 +59,7 @@ class VoiceChatServer:
         print('Adding a new client...')
         self.inputPort += 1
         client_socket = self.context.socket(zmq.REQ)
-        client_socket.connect("tcp://localhost:{}".format(self.inputPort))
+        client_socket.connect("tcp://{}:{}".format(client_ip, self.inputPort))
         self.clients[client_name] = client_socket
         return self.inputPort
 

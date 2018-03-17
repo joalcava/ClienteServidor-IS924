@@ -6,6 +6,7 @@ import wave
 import threading
 import json
 import zmq
+import socket
 
 FILE_CHUNK_MARK = 512 # 0.5KB
 FORMAT = pyaudio.paInt16
@@ -66,7 +67,8 @@ def Listen(server_sc, self_sc):
             print('Downloading...')
             self_sc.send_json('ok')
             print('Playing')
-            stream.write(request['audio'].encode('UTF-16', 'ignore'))
+            audio = request['audio'].encode('UTF-16', 'ignore')
+            stream.write(audio)
             print('Played')
         stream.stop_stream()
         stream.close()
@@ -83,9 +85,13 @@ class VoiceChatClient:
         self.ip = self.__getClientIp()
 
     def __getClientIp(self):
-        print("Fetching client ip...")
-        client_ip = json.load(urlopen('http://jsonip.com'))['ip']
-        print("Your ip: {}".format(client_ip))
+        #print("Fetching client ip...")
+        #client_ip = json.load(urlopen('http://jsonip.com'))['ip']
+        #print("Your ip: {}".format(client_ip))
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+        # return socket.gethostbyname(socket.gethostbyname())
 
     def Start(self):
         self.server_sc.send_json(
