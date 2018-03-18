@@ -10,7 +10,7 @@ server = context.socket(zmq.REQ)
 name = ''
 ACCEPTCALLS = False
 BUSY = False
-FILE_CHUNK_MARK = 512 # 0.5KB
+CHUNK = 512 # 0.5KB
 FORMAT = pyaudio.paInt16
 CHANNELS = 2
 RATE = 44100
@@ -51,7 +51,7 @@ def listen(port):
                     channels=CHANNELS,
                     rate=RATE,
                     output=True,
-                    frames_per_buffer=FILE_CHUNK_MARK)
+                    frames_per_buffer=CHUNK)
     global BUSY
     while True:
         request = socket.recv_json()
@@ -76,8 +76,8 @@ def listen(port):
                 socket.send_string('ok')
                 threading.Thread(target=recordAndSend, args=[client]).start()
         elif request['op'] == 'activeCallAudio':
-            stream.write(request['audio'].encode('UTF-16', 'ignore'))
             socket.send_string('ok')
+            stream.write(request['audio'].encode('UTF-16', 'ignore'))
         else:
             print('invalid request recieved.')
     stream.stop_stream()
@@ -150,9 +150,9 @@ def recordAndSend(client):
                     channels=CHANNELS,
                     rate=RATE,
                     input=True,
-                    frames_per_buffer=FILE_CHUNK_MARK)
+                    frames_per_buffer=CHUNK)
     while True:
-        audio = stream.read(FILE_CHUNK_MARK)
+        audio = stream.read(CHUNK)
         client.send_json(
             {
                 'op': 'activeCallAudio',
