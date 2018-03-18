@@ -10,7 +10,7 @@ server = context.socket(zmq.REQ)
 name = ''
 ACCEPTCALLS = False
 BUSY = False
-CHUNK = 512 # 0.5KB
+CHUNK = 1024 # 0.5KB
 FORMAT = pyaudio.paInt16
 CHANNELS = 2
 RATE = 44100
@@ -152,7 +152,7 @@ def recordAndSend(client):
                     input=True,
                     frames_per_buffer=CHUNK)
     while True:
-        audio = stream.read(CHUNK)
+        audio = stream.read(CHUNK, """exception_on_overflow=False""")
         client.send_json(
             {
                 'op': 'activeCallAudio',
