@@ -15,10 +15,12 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 2
 RATE = 44100
 
+
 def getMyIp():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
     return s.getsockname()[0]
+
 
 def main():
     global name
@@ -37,6 +39,7 @@ def main():
     port = server.recv_string()
     threading.Thread(target=listen, args=[port]).start()
     printOptions()
+
 
 def listen(port):
     print('Listening for calls...')
@@ -59,8 +62,10 @@ def listen(port):
             socket.send_string('ok')
             print('played.')
         elif request['op'] == 'callRequest':
+            print('Incoming call from: {}'.format(request['from']))
             if ACCEPTCALLS: socket.send_string('1')
             else: socket.send_string('0')
+            print('accepted.' if ACCEPTCALLS else 'rejected.')
         elif request['op'] == 'startCall':
             if BUSY:
                 print("I'M IS BUSY IN ANOTHER CALL")
@@ -68,6 +73,7 @@ def listen(port):
                 BUSY = True
                 client = context.socket(zmq.REQ)
                 client.connect("tcp://{}:{}".format(request['ip'], request['port']))
+                socket.send_string('ok')
                 threading.Thread(target=recordAndSend, args=[client]).start()
         elif request['op'] == 'activeCallAudio':
             stream.write(request['audio'].encode('UTF-16', 'ignore'))
@@ -78,13 +84,16 @@ def listen(port):
     stream.close()
     pyAudio.terminate()
 
+
 def clearScreen():
     os.system('cls' if os.name == 'nt' else 'clear')
+
 
 def requestClientsList():
     server.send_json({'op': 'getListOfClients'})
     response = server.recv_string()
     return response
+
 
 def sendVoiceMessage():
     to = input("Enter the user's name to send the message: ")
@@ -117,7 +126,6 @@ def sendVoiceMessage():
     server.recv_string()
     return 'Message has been sent.'
     
-    
 
 def requestCall():
     to = input("User's name to call: ")
@@ -134,6 +142,7 @@ def requestCall():
     else:
         result = 'Call rejected'
     return result
+
 
 def recordAndSend(client):
     pyAudio = pyaudio.PyAudio()
@@ -154,6 +163,7 @@ def recordAndSend(client):
     stream.stop_stream()
     stream.close()
     pyAudio.terminate()
+
 
 def printOptions(callbackString = None):
     clearScreen()
@@ -182,7 +192,6 @@ def printOptions(callbackString = None):
         return printOptions(message)
     else:
         return printOptions('-- INVALID OPTION !!.')
-
 
 
 if __name__ == '__main__':
