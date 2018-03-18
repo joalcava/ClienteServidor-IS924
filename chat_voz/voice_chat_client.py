@@ -91,7 +91,6 @@ class VoiceChatClient:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         return s.getsockname()[0]
-        # return socket.gethostbyname(socket.gethostbyname())
 
     def Start(self):
         self.server_sc.send_json(
@@ -103,8 +102,8 @@ class VoiceChatClient:
         )
         response = self.server_sc.recv_json()
         self.CheckResponse(response, 'port')
-        # Listen for calls
         port = response['port']
+        # Listen for calls
         self_sc = self.context.socket(zmq.REP)
         self_sc.bind("tcp://*:{}".format(port))
         threading.Thread(target = Listen, args = [self.server_sc, self_sc]).start()

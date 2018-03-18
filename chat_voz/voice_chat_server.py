@@ -60,7 +60,7 @@ class VoiceChatServer:
         self.inputPort += 1
         client_socket = self.context.socket(zmq.REQ)
         client_socket.connect("tcp://{}:{}".format(client_ip, self.inputPort))
-        self.clients[client_name] = client_socket
+        self.clients[client_name] = (client_socket)
         return self.inputPort
 
     def GetListOfClients(self):
