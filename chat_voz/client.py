@@ -53,10 +53,12 @@ def listen(port):
     while True:
         request = socket.recv_json()
         if request['op'] == 'sendVoiceMessage':
+            print('Voice message recieved. Playing...')
             for audio in request['audio']:
                 stream.write(audio.encode('UTF-16', 'ignore'))
             socket.send_string('ok')
-        if request['op'] == 'callRequest':
+            print('played.')
+        elif request['op'] == 'callRequest':
             if ACCEPTCALLS: socket.send_string('1')
             else: socket.send_string('0')
         elif request['op'] == 'startCall':
@@ -101,10 +103,10 @@ def sendVoiceMessage():
     stream.start_stream()
 
     input('Press <enter> to stop recording.')
+    
     stream.stop_stream()
     stream.close()
     pyAudio.terminate()
-
     server.send_json(
         {
             'op': 'sendVoiceMessage',
@@ -113,6 +115,8 @@ def sendVoiceMessage():
         }
     )
     server.recv_string()
+    return 'Message has been sent.'
+    
     
 
 def requestCall():
@@ -166,7 +170,8 @@ def printOptions(callbackString = None):
         clients = requestClientsList()
         return printOptions(clients)
     elif option == '2':
-        sendVoiceMessage()
+        result = sendVoiceMessage()
+        return printOptions(result)
     elif option == '3':
         result = requestCall()
         return printOptions(result)
