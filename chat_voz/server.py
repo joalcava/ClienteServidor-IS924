@@ -60,11 +60,11 @@ def callRequest(request):
 
 def sendVoiceMessage(request):
     print('Sending voice message')
+    to = clients[request['to']][0]
+    to.send_json(request)
+    to.recv_string()
+    socket.send_string('ok')
     print('sent.')
-
-# def activeCallAudio(request):
-#     print('streaming call')
-#     print('ok.')
 
 if __name__ == '__main__':
     main()

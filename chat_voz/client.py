@@ -10,7 +10,7 @@ server = context.socket(zmq.REQ)
 name = ''
 ACCEPTCALLS = False
 BUSY = False
-FILE_CHUNK_MARK = 512 # 0.5KB
+FILE_CHUNK_MARK = 1024 # 0.5KB
 FORMAT = pyaudio.paInt16
 CHANNELS = 2
 RATE = 44100
@@ -52,6 +52,10 @@ def listen(port):
     global BUSY
     while True:
         request = socket.recv_json()
+        if request['op'] == 'sendVoiceMessage':
+            for audio in request['audio']:
+                stream.write(audio.encode('UTF-16', 'ignore'))
+            socket.send_string('ok')
         if request['op'] == 'callRequest':
             if ACCEPTCALLS: socket.send_string('1')
             else: socket.send_string('0')
@@ -81,7 +85,35 @@ def requestClientsList():
     return response
 
 def sendVoiceMessage():
-    pass
+    to = input("Enter the user's name to send the message: ")
+    pyAudio = pyaudio.PyAudio()
+    frames = []
+    def callback(in_data, frame_count, time_info, status):
+        frames.append(in_data.decode('UTF-16', 'ignore'))
+        return (in_data, pyaudio.paContinue)
+    
+    stream = pyAudio.open(format=FORMAT,
+                    channels=CHANNELS,
+                    rate=RATE,
+                    input=True,
+                    stream_callback=callback)
+    
+    stream.start_stream()
+
+    input('Press <enter> to stop recording.')
+    stream.stop_stream()
+    stream.close()
+    pyAudio.terminate()
+
+    server.send_json(
+        {
+            'op': 'sendVoiceMessage',
+            'audio': frames,
+            'to': to
+        }
+    )
+    server.recv_string()
+    
 
 def requestCall():
     to = input("User's name to call: ")
