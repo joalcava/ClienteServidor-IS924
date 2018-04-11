@@ -1,182 +1,195 @@
-from urllib.request import urlopen
-import sys
-import os
-import pyaudio
-import wave
-import threading
-import json
 import zmq
+import os
 import socket
-
-FILE_CHUNK_MARK = 512 # 0.5KB
-FORMAT = pyaudio.paInt16
-CHANNELS = 2
-RATE = 44100
-ACCEPTCALLS = False
-
-def RecordAndSend(server, reciever):
-    pyAudio = pyaudio.PyAudio()
-    stream = pyAudio.open(format=FORMAT,
-                    channels=CHANNELS,
-                    rate=RATE,
-                    input=True,
-                    frames_per_buffer=FILE_CHUNK_MARK)
-    while True:
-        print('Recording...')
-        audio = stream.read(FILE_CHUNK_MARK)
-        print('Sending')
-        server.send_json(
-            {
-                'op': 'ActiveCallAudio',
-                'reciever': reciever,
-                'audio': audio.decode('UTF-16', 'ignore')
-            })
-        print('sendend')
-        server.recv_json()
-        print('callback recieved')
-    stream.stop_stream()
-    stream.close()
-    pyAudio.terminate()
+import threading
+import pyaudio
 
 
-def Listen(server_sc, self_sc):
-    print('Thread listening for calls...')
-    pyAudio = pyaudio.PyAudio()
-    stream = pyAudio.open(format=FORMAT,
-                    channels=CHANNELS,
-                    rate=RATE,
-                    output=True,
-                    frames_per_buffer=FILE_CHUNK_MARK)
-    while True:
-        request = self_sc.recv_json()
-        if request['op'] == 'IncomingCall':
-            print('\n\n*** Incomming call from {} ***'.format(request['from']))
-            if ACCEPTCALLS:
-                print('Accepting the call...')
-                accept = True
-            else:
-                print('Rejecting the call...')
-                accept = False
-            if accept:
-                self_sc.send_json({ 'op': 'CallAccepted' })
-                print('THE CALL HAS STARTED.')
-                threading.Thread(target=RecordAndSend, args=[server_sc, request['from']]).start()
-            else:
-                self_sc.send_json({'op': 'CallRejected'})
-        elif request['op'] == 'ActiveCallAudio':
-            print('Downloading...')
-            self_sc.send_json('ok')
-            print('Playing')
-            audio = request['audio'].encode('UTF-16', 'ignore')
-            stream.write(audio)
-            print('Played')
-        stream.stop_stream()
-        stream.close()
-        pyAudio.terminate()
+class Client:
 
-
-class VoiceChatClient:
-
-    def __init__(self, client_name, server_ip, server_port):
+    def __init__(self, name):
         self.context = zmq.Context()
         self.server_sc = self.context.socket(zmq.REQ)
-        self.server_sc.connect("tcp://{}:{}".format(server_ip, server_port))
-        self.name = client_name
-        self.ip = self.__getClientIp()
+        self.name = name
 
-    def __getClientIp(self):
-        #print("Fetching client ip...")
-        #client_ip = json.load(urlopen('http://jsonip.com'))['ip']
-        #print("Your ip: {}".format(client_ip))
+        self.__ACCEPTCALLS = False
+        self.__BUSY = False
+        self.__CHUNK = 1024  # 0.5KB
+        self.__FORMAT = pyaudio.paInt16
+        self.__CHANNELS = 2
+        self.__RATE = 44100
+
+    def start(self, server_ip, server_port):
+        self.server_sc.connect("tcp://{}:{}".format(server_ip, server_port))
+        current_ip = self.getMyIp()
+        self.server_sc.send_json(
+            {
+                'op':   'newClient',
+                'name': self.name,
+                'ip':   current_ip
+            }
+        )
+        port = self.server_sc.recv_string()
+        threading.Thread(target=self.listen, args=[port]).start()
+        self.printOptions()
+
+    def getMyIp(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         return s.getsockname()[0]
 
-    def Start(self):
+    def listen(self, port):
+        print('Listening for calls on port {}'.format(port))
+        socket = self.context.socket(zmq.REP)
+        socket.bind("tcp://*:{}".format(port))
+        pyAudio = pyaudio.PyAudio()
+        stream = pyAudio.open(format=self.__FORMAT,
+                              channels=self.__CHANNELS,
+                              rate=self.__RATE,
+                              output=True,
+                              frames_per_buffer=self.__CHUNK)
+        global BUSY
+        while True:
+            request = socket.recv_json()
+            if request['op'] == 'sendVoiceMessage':
+                print('Voice message recieved. Playing...')
+                for audio in request['audio']:
+                    stream.write(audio.encode('UTF-16', 'ignore'))
+                    socket.send_string('ok')
+                    print('played.')
+            elif request['op'] == 'callRequest':
+                print('Incoming call from: {}'.format(request['from']))
+                if self.__ACCEPTCALLS:
+                    socket.send_string('1')
+                else:
+                    socket.send_string('0')
+                    print('accepted.' if self.__ACCEPTCALLS else 'rejected.')
+            elif request['op'] == 'startCall':
+                if self.__BUSY:
+                    print("I'M IS BUSY IN ANOTHER CALL")
+                else:
+                    BUSY = True
+                    client = self.context.socket(zmq.REQ)
+                    client.connect(
+                        "tcp://{}:{}".format(request['ip'], request['port']))
+                    socket.send_string('ok')
+                    threading.Thread(target=self.recordAndSend, args=[client]).start()
+            elif request['op'] == 'activeCallAudio':
+                socket.send_string('ok')
+                stream.write(request['audio'].encode('UTF-16', 'ignore'))
+            else:
+                print('invalid request recieved.')
+                stream.stop_stream()
+                stream.close()
+                pyAudio.terminate()
+
+    def clearScreen(self):
+        os.system('cls' if os.name == 'nt' else 'clear')
+
+    def requestClientsList(self):
+        self.server_sc.send_json({'op': 'getListOfClients'})
+        response = self.server_sc.recv_string()
+        return response
+
+    def sendVoiceMessage(self):
+        to = input("Enter the user's name to send the message: ")
+        pyAudio = pyaudio.PyAudio()
+        frames = []
+
+        def callback(in_data, frame_count, time_info, status):
+            frames.append(in_data.decode('UTF-16', 'ignore'))
+            return (in_data, pyaudio.paContinue)
+
+        input('Press <enter> to stop recording.')
+        stream = pyAudio.open(format=self.__FORMAT,
+                              channels=self.__CHANNELS,
+                              rate=self.__RATE,
+                              input=True,
+                              stream_callback=callback)
+        stream.start_stream()
+        stream.stop_stream()
+        stream.close()
+        pyAudio.terminate()
         self.server_sc.send_json(
             {
-                'op': 'NewClient',
-                'name': self.name,
-                'ip': self.ip
+                'op': 'sendVoiceMessage',
+                'audio': frames,
+                'to': to
             }
         )
-        response = self.server_sc.recv_json()
-        self.CheckResponse(response, 'port')
-        port = response['port']
-        # Listen for calls
-        self_sc = self.context.socket(zmq.REP)
-        self_sc.bind("tcp://*:{}".format(port))
-        threading.Thread(target = Listen, args = [self.server_sc, self_sc]).start()
-        self.ThrowOptions()
+        self.server_sc.recv_string()
+        return 'Message has been sent.'
 
-    def ThrowOptions(self, callbackString = None):
-        self.__clearScreen()
-        if callbackString: print("\n\n{}\n\n".format(callbackString))
+    def requestCall(self):
+        to = input("User's name to call: ")
+        self.server_sc.send_json(
+            {
+                'op': 'callRequest',
+                'to': to,
+                'from': self.name
+            }
+        )
+        response = self.server_sc.recv_string()
+        if (response == '1'):
+            result = 'Call accepted'
+        else:
+            result = 'Call rejected'
+            return result
+
+    def recordAndSend(self, client):
+        pyAudio = pyaudio.PyAudio()
+        stream = pyAudio.open(format=self.__FORMAT,
+                              channels=self.__CHANNELS,
+                              rate=self.__RATE,
+                              input=True,
+                              frames_per_buffer=self.__CHUNK)
+        while True:
+            audio = stream.read(self.__CHUNK)  # exception_on_overflow ?
+            client.send_json(
+                {
+                    'op': 'activeCallAudio',
+                    'audio': audio.decode('UTF-16', 'ignore')
+                }
+            )
+            client.recv_string()
+            stream.stop_stream()
+            stream.close()
+            pyAudio.terminate()
+
+    def printOptions(self, callbackString=None):
+        self.clearScreen()
+        if callbackString:
+            print("\n\n{}\n\n".format(callbackString))
+
         print("1. Clients list")
         print("2. Send Voice Message")
         print("3. Start Call")
-        global ACCEPTCALLS
-        if not ACCEPTCALLS:
+
+        if not self.__ACCEPTCALLS:
             print("4. Start accepting calls")
-        else: print("4. Stop accepting calls")
+        else:
+            print("4. Stop accepting calls")
+
         option = input('Choose one: ')
         if option == '1':
-            clients = self.RequestClientsList()
-            return self.ThrowOptions(clients)
+            clients = self.requestClientsList()
+            return self.printOptions(clients)
         elif option == '2':
-            self.SendVoiceMessage()
+            result = self.sendVoiceMessage()
+            return self.printOptions(result)
         elif option == '3':
-            result = self.StartCall()
-            return self.ThrowOptions(result)
+            result = self.requestCall()
+            return self.printOptions(result)
         elif option == '4':
-            ACCEPTCALLS = not ACCEPTCALLS
-            if ACCEPTCALLS: message = "Now accepting calls"
-            else: message = "Not accepting calls"
-            return self.ThrowOptions(message)
+            self.__ACCEPTCALLS = not self.__ACCEPTCALLS
+            message = "Now accepting calls" if self.__ACCEPTCALLS else "Not accepting calls"
+            return self.printOptions(message)
         else:
-            return self.ThrowOptions('-- INVALID OPTION !!.')
+            return self.printOptions('-- INVALID OPTION !!.')
 
-    def RequestClientsList(self):
-        self.server_sc.send_json({ 'op': 'GetListOfClients' })
-        response = self.server_sc.recv_json()
-        self.CheckResponse(response, 'clients')
-        return response['clients']
-
-    def StartCall(self):
-        userToCall = input("User's name to call: ")
-        self.server_sc.send_json(
-            {
-                'op': 'Call',
-                'emitter': self.name,
-                'receiver': userToCall
-            })
-        response = self.server_sc.recv_json()
-        self.CheckResponse(response, 'response')
-        if response['response'] == 'rejected':
-            return 'The call was rejected...'
-        else:
-            print('\nTHE CALL HAS STARTED.')
-            threading.Thread(target=RecordAndSend, args=[self.server_sc, userToCall]).start()
-            input('Press <enter> in any moment to finish the call.\n')
-
-
-    def SendVoiceMessage(self):
-        pass
-
-    def CheckResponse(self, response, needed_key):
-        if response['op'] == 'result':
-            if response['result'] == 'ok':
-                if needed_key in response:
-                    return
-                else:
-                    raise Exception('Server didnt send the expected key')
-            elif response['result'] == 'error':
-                if 'error' in response:
-                    raise Exception(response['error'])
-                else:
-                    raise Exception('An error has occurred in server')
-            else:
-                raise Exception('Unexpected response from server.')
-
-    def __clearScreen(self):
-        os.system('cls' if os.name == 'nt' else 'clear')
+if __name__ == '__main__':
+    name = input('Enter your nickname: ')
+    server_ip = input('Enter the server ip: ')
+    server_port = input('Enter the server port: ')
+    client = Client(name)
+    client.start(server_ip, server_port)

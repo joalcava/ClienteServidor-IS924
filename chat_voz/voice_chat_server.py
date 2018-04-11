@@ -1,89 +1,85 @@
-import sys
-import os
-import threading
-import json
 import zmq
 
-# Result types:
-# ok, next_as:bytes, error,
 
+class Server:
 
+    PORT_COUNTER = 4000
 
-class VoiceChatServer:
-
-    def __init__(self, mainSocket):
-        self.mainSocket = mainSocket
-        self.inputPort = 4000
-        self.clients = {}
+    def __init__(self):
         self.context = zmq.Context()
+        self.clients = {}
+        self.socket = self.context.socket(zmq.REP)
 
-    def Start(self):
+    def start(self, port):
+        self.socket.bind("tcp://*:{}".format(port))
+        self.listen()
+
+    def listen(self):
+        print('listening...')
         while True:
-            request = self.mainSocket.recv_json()
-            response = self.AttendRequest(request)
-            if (request['op'] == 'ActiveCallAudio'):
-                continue
+            request = self.socket.recv_json()
+            if request['op'] == 'newClient':
+                self.addNewClient(request)
+            elif request['op'] == 'getListOfClients':
+                self.getListOfClients()
+            elif request['op'] == 'callRequest':
+                self.callRequest(request)
+            elif request['op'] == 'sendVoiceMessage':
+                self.sendVoiceMessage(request)
             else:
-                self.mainSocket.send_json(response)
+                print('Invalid operation')
 
-    def AttendRequest(self, request):
-        if request['op'] == 'NewClient':
-            client_name = request['name']
-            client_ip = request['ip']
-            port = self.AddNewClient(client_name, client_ip)
-            return {'op': 'result', 'result': 'ok', 'port': port}
-        elif request['op'] == 'GetListOfClients':
-            result = self.GetListOfClients()
-            return {'op': 'result', 'result': 'ok', 'clients': result}
-        elif request['op'] == 'Call':
-            response = self.Call(request)
-            return {'op': 'result', 'result': 'ok', 'response': response}
-        elif request['op'] == 'SendMessage':
-            self.SendMessage(request)
-            return {'op': 'result', 'result': 'ok'}
-        elif request['op'] == 'ActiveCallAudio':
-            self.mainSocket.send_json('ok')
-            reciever = self.clients[request['reciever']]
-            reciever.send_json(request)
-            reciever.recv_json()
-            return ''
+    def addNewClient(self, request):
+        print('Adding a new client: {}'.format(request['name']))
+        Server.PORT_COUNTER += 1
+        ip = request['ip']
+        sc = self.context.socket(zmq.REQ)
+        sc.connect("tcp://{}:{}".format(request['ip'], Server.PORT_COUNTER))
+        self.clients[request['name']] = (sc, ip, Server.PORT_COUNTER)
+        self.socket.send_string(str(Server.PORT_COUNTER))
+        print('{} added.'.format(request['name']))
+
+    def getListOfClients(self):
+        print('Serving list of clients.')
+        self.socket.send_string(str(list(self.clients.keys())))
+        print('served.')
+
+    def callRequest(self, request):
+        print('Doing call request')
+        _to = self.clients[request['to']]
+        _from = self.clients[request['from']]
+        _to[0].send_json({'op': 'callRequest', 'from': request['from']})
+        response = _to[0].recv_string()
+        self.socket.send_string(response)
+        if (response == '1'):
+            _to[0].send_json(
+                {
+                    'op':   'startCall',
+                    'ip':   _from[1],
+                    'port': _from[2]
+                })
+            _to[0].recv_string()
+            _from[0].send_json(
+                {
+                    'op':  'startCall',
+                    'ip':   _to[1],
+                    'port': _to[2]
+                })
+            _from[0].recv_string()
         else:
-            print('Invalid operation')
-            return {
-                'op': 'result',
-                'result': 'error',
-                'error': 'Invalid operation'
-            }
+            print('call rejected')
+            print('done.')
 
-    def AddNewClient(self, client_name, client_ip):
-        print('Adding a new client...')
-        self.inputPort += 1
-        client_socket = self.context.socket(zmq.REQ)
-        client_socket.connect("tcp://{}:{}".format(client_ip, self.inputPort))
-        self.clients[client_name] = (client_socket)
-        return self.inputPort
+    def sendVoiceMessage(self, request):
+        print('Sending voice message')
+        to = self.clients[request['to']][0]
+        to.send_json(request)
+        to.recv_string()
+        self.socket.send_string('ok')
+        print('sent.')
 
-    def GetListOfClients(self):
-        print('Serving list of clients...')
-        return list(self.clients.keys())
+if __name__ == '__main__':
+    port = input('Enter the port listen port: ')
+    server = Server()
+    server.start(port)
 
-    def Call(self, request):
-        print('Calling a client...')
-        emitter = request['emitter']
-        userToCall = request['receiver']
-        sc = self.clients[userToCall]
-        sc.send_json(
-            {
-                'op': 'IncomingCall',
-                'from': emitter
-            }
-        )
-        response = sc.recv_json()
-        if response['op'] == 'CallAccepted':
-            print('The call was accepted. Now their are talking')
-            return 'accepted'
-        print('The call was rejected...')
-        return 'rejected'
-
-    def SendMessage(self, request):
-        pass
