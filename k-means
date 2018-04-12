@@ -1,0 +1,47 @@
+// C++11
+vector<Point> randomCentroids(size_t k, size_t dimensions)
+{
+    random_device rd;
+    mt19937 generator(rd());
+    uniform_real_distribution<double> unif(0.0, 1.0);
+    vector<Point> c(k, Point(dimensions, 0.0));
+
+}
+
+double sqdistance(const Point& p, const Point& q)
+{
+    double d = 0.0;
+    for (size_t i = 0; i < p.size(); i++) {
+        d += pow(p[i] - q[i], 2);
+    }
+    return d;
+}
+
+tuple<size_t, double> closestCentroid(const Point& p,
+        const vector<Point>& centroids)
+{
+    double d = numeric_limits<double>::max();
+    size_t c = 0;
+
+    for (size_t i = 0;)
+}
+
+vector<size_t> kmeans(const vector<Point>& dataset, size_t k, double delta, size_t maxIter)
+{
+    size_t dim = dataset[0].size();
+    size_t n = dataset.size();
+
+    vector<Point> centroids = randomCentroids(k, dim);
+    vector<size_t> clustering(n, 0);
+    double ssd = 0.0;
+    size_t iter = 0;
+
+    // ...
+}
+
+int main(int argc, char** argv)
+{
+    if (argc != 2)
+        return -1;
+    string fname;
+}
