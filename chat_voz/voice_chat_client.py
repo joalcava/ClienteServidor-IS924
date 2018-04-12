@@ -168,6 +168,11 @@ class Client:
             print("4. Start accepting calls")
         else:
             print("4. Stop accepting calls")
+        
+        print("\n") 
+        print("5. List all active group calls")
+        print("6. Join to group call")
+        print("7. Start a group call")
 
         option = input('Choose one: ')
         if option == '1':
@@ -183,8 +188,31 @@ class Client:
             self.__ACCEPTCALLS = not self.__ACCEPTCALLS
             message = "Now accepting calls" if self.__ACCEPTCALLS else "Not accepting calls"
             return self.printOptions(message)
+        elif option == '5':
+            result = self.requestListOfActiveGroups()
+            return self.printOptions(result)
+        elif option == '6':
+            self.joinToGroupCall()
+            return self.printOptions('GROUP CALL ENDED.')
+        elif option == '7':
+            self.startGroupCall()
+            return self.printOptions('GROUP CALL ENDED')
         else:
             return self.printOptions('-- INVALID OPTION !!.')
+    
+    def requestListOfActiveGroups(self):
+        self.server_sc.send_json({
+            'op': 'listActiveGroupCalls'
+        })
+        response = self.server_sc.recv_string()
+        return response
+
+
+    def joinToGroupCall(self):
+        pass
+
+    def startGroupCall(self):
+        pass
 
 
 if __name__ == '__main__':

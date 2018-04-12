@@ -8,6 +8,7 @@ class Server:
     def __init__(self):
         self.context = zmq.Context()
         self.clients = {}
+        self.groups = {}
         self.socket = self.context.socket(zmq.REP)
 
     def start(self, port):
@@ -26,11 +27,28 @@ class Server:
                 self.callRequest(request)
             elif request['op'] == 'sendVoiceMessage':
                 self.sendVoiceMessage(request)
+            elif request['op'] == 'listActiveGroupCalls':
+                self.listActiveGroupCalls(request)
+            elif request['op'] == 'joinToGroupCall':
+                self.joinToGroupCall(request)
+            elif request['op'] == 'startGroupCall':
+                self.startGroupCall(request)
             else:
                 print('Invalid operation')
 
+    def listActiveGroupCalls(self, request):
+        print('\nServing list of all active group calls')
+        self.socket.send_string(str(list(self.groups.keys())))
+        print('served.')
+
+    def joinToGroupCall(self, request):
+        pass
+
+    def startGroupCall(self, request):
+        pass
+
     def addNewClient(self, request):
-        print('Adding a new client: {}'.format(request['name']))
+        print('\nAdding a new client: {}'.format(request['name']))
         Server.PORT_COUNTER += 1
         ip = request['ip']
         sc = self.context.socket(zmq.REQ)
@@ -40,12 +58,12 @@ class Server:
         print('{} added.'.format(request['name']))
 
     def getListOfClients(self):
-        print('Serving list of clients.')
+        print('\nServing list of clients.')
         self.socket.send_string(str(list(self.clients.keys())))
         print('served.')
 
     def callRequest(self, request):
-        print('Doing call request')
+        print('\nDoing call request')
         _to = self.clients[request['to']]
         _from = self.clients[request['from']]
         _to[0].send_json({'op': 'callRequest', 'from': request['from']})
@@ -71,7 +89,7 @@ class Server:
             print('done.')
 
     def sendVoiceMessage(self, request):
-        print('Sending voice message')
+        print('\nSending voice message')
         to = self.clients[request['to']][0]
         to.send_json(request)
         to.recv_string()
@@ -79,7 +97,7 @@ class Server:
         print('sent.')
 
 if __name__ == '__main__':
-    port = input('Enter the port listen port: ')
+    port = input('\nEnter the port listen port: ')
     server = Server()
     server.start(port)
 
