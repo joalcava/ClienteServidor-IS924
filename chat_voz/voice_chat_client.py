@@ -12,8 +12,6 @@ RATE = 44100
 
 class Client:
 
-    PORT_MAYBE = 5000
-
     def __init__(self, name):
         self.context = zmq.Context()
         self.server_sc = self.context.socket(zmq.REQ)
@@ -96,9 +94,12 @@ class Client:
         os.system('cls' if os.name == 'nt' else 'clear')
 
     def subscribeToClient(self, request):
+        if request['ip'] == self.getMyIp():
+            return
         socket = self.context.socket(zmq.SUB)
-        socket.bind("tcp://{}:{}".format(request['ip'], request['port']))
-        socket.setsockopt_string(zmq.SUBSCRIBE, '1')
+        # print(request['ip'], request['port'])
+        socket.connect("tcp://{}:{}".format(request['ip'], request['port']))
+        socket.setsockopt_string(zmq.SUBSCRIBE, '')
         pyAudio = pyaudio.PyAudio()
         stream = pyAudio.open(format=FORMAT,
                               channels=CHANNELS,
@@ -108,8 +109,7 @@ class Client:
         while True:
             data = socket.recv_string()
             print('Data Recieved')
-            code, audio = data.split()
-            stream.write(audio.encode('UTF-16', 'ignore'))
+            stream.write(data.encode('UTF-16', 'ignore'))
             print('Audio played')
 
     def requestClientsList(self):
@@ -235,11 +235,13 @@ class Client:
         response = self.server_sc.recv_string()
         return response
 
-    def joinToGroupCall(self):
-        groupName = input('Enter the group name to join: ')
-        Client.PORT_MAYBE += 5
-        my_port = Client.PORT_MAYBE
+    def joinToGroupCall(self, groupName = None):
+        if groupName == None:
+            groupName = input('Enter the group name to join: ')
+        self.server_sc.send_json({'op': 'assignMeAPort', 'name': self.name})
+        my_port = self.server_sc.recv_string()
         my_ip = self.getMyIp()
+
         self.server_sc.send_json({
             'op': 'joinToGroupCall',
             'group': groupName,
@@ -247,11 +249,15 @@ class Client:
             'port': my_port,  # My port
             'ip': my_ip  # My IP 
         })
-        response = self.server_sc.recv_string()
-        if response == 'NO':
+        response = self.server_sc.recv_json()
+        if response['result'] == 'error':
             return "THAT GROUP CALL DONT EXIST."
         else:
             threading.Thread(target=self.startBroadcastingCall, args=[my_ip, my_port]).start()
+            for ip in list(response['users'].keys()):
+                if ip != my_ip:
+                    _args = {'ip': ip, 'port': response['users'][ip]}
+                    threading.Thread(target=self.subscribeToClient, args=[_args]).start()
             input('Press <enter> to exit.')
             return "Call finished."
 
@@ -265,11 +271,10 @@ class Client:
                               rate=RATE,
                               input=True,
                               frames_per_buffer=CHUNK)
+        print("\nRECORDING AND SENDING AUDIO")
         while True:
             audio = stream.read(CHUNK)
-            print('Audio recorded')
-            pub_sc.send_string("%i %s" % (1, audio.decode('UTF-16', 'ignore')))
-            print('Audio sended')
+            pub_sc.send_string(audio.decode('UTF-16', 'ignore'))
         stream.stop_stream()
         stream.close()
         pyAudio.terminate()
@@ -277,12 +282,15 @@ class Client:
     def startGroupCall(self):
         if self.__BUSY:
             return('YOU ARE BUSY')
-
+        # Create the call
         self.server_sc.send_json({
             'op': 'startGroupCall',
             'name': self.name,
         })
         self.server_sc.recv_string()
+
+        # Start broadcasting
+        self.joinToGroupCall(groupName=self.name+"'s_call")
         print('YOU ARE IN A GROUP CALL')
         input('Press <enter> to finish the call')
         return "Call finished"

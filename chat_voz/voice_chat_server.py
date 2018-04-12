@@ -1,5 +1,12 @@
 import zmq
 
+class User:
+    def __init__(self, name, ip, socket, port_call, port_group_call):
+        self.name = name
+        self.ip = ip
+        self.socket = socket
+        self.port_call = port_call
+        self.port_group_call = port_group_call
 
 class Server:
 
@@ -7,7 +14,7 @@ class Server:
 
     def __init__(self):
         self.context = zmq.Context()
-        self.clients = {} # (socker, ip, port)
+        self.clients = {} # name: User
         self.groups = {} # { 'name': {'name': socket, ...}}
         self.socket = self.context.socket(zmq.REP)
 
@@ -33,6 +40,8 @@ class Server:
                 self.joinToGroupCall(request)
             elif request['op'] == 'startGroupCall':
                 self.startGroupCall(request)
+            elif request['op'] == 'assignMeAPort':
+                self.assignAPort(request)
             else:
                 print('Invalid operation')
 
@@ -43,12 +52,21 @@ class Server:
 
     def joinToGroupCall(self, request):
         clientName = request['name']
-        groupName = request['group']
         clientPort = request['port']
         clientIp = request['ip']
+        groupName = request['group']
+
         print('\nTrying to join {} to {} call'.format(clientName, groupName))
+
         if groupName in self.groups:
-            self.socket.send_string('YES')
+            group = self.groups[groupName]
+            group[clientName] = self.clients[clientName]
+            group[clientName][2] = clientPort
+            users = {}
+            for i in list(group.keys()):
+                users[group[i][1]] = group[i][2]
+            self.socket.send_json({'result': 'ok', 'users': users})
+
             # Say to all participants to subscribe the new client
             clientsInCall = list(self.groups[groupName].keys())
             for name in clientsInCall:
@@ -59,12 +77,15 @@ class Server:
                     'ip': clientIp,
                     'port': clientPort
                 })
-            # Adds the new client to the group call
-            self.groups[groupName][clientName] = self.clients[clientName]
+                cl_sc.recv_string()
             print('SUCCESSFULLY JOINED.')
         else:
             print("THE CALL DOESNT EXIST")
-            self.socket.send_string('NO')
+            self.socket.send_json({'result': 'error'})
+
+    def assignAPort(self, request):
+        Server.PORT_COUNTER += 1
+        self.socket.send_string(str(Server.PORT_COUNTER))
 
     def startGroupCall(self, request):
         print('\nStarting a group call')
@@ -83,7 +104,7 @@ class Server:
         ip = request['ip']
         sc = self.context.socket(zmq.REQ)
         sc.connect("tcp://{}:{}".format(request['ip'], Server.PORT_COUNTER))
-        self.clients[request['name']] = (sc, ip, Server.PORT_COUNTER)
+        self.clients[request['name']] = [sc, ip, Server.PORT_COUNTER]
         self.socket.send_string(str(Server.PORT_COUNTER))
         print('{} added.'.format(request['name']))
 
