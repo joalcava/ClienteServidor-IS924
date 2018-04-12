@@ -7,8 +7,8 @@ class Server:
 
     def __init__(self):
         self.context = zmq.Context()
-        self.clients = {}
-        self.groups = {}
+        self.clients = {} # (socker, ip, port)
+        self.groups = {} # { 'name': {'name': socket, ...}}
         self.socket = self.context.socket(zmq.REP)
 
     def start(self, port):
@@ -42,10 +42,40 @@ class Server:
         print('served.')
 
     def joinToGroupCall(self, request):
-        pass
+        clientName = request['name']
+        groupName = request['group']
+        clientPort = request['port']
+        clientIp = request['ip']
+        print('\nTrying to join {} to {} call'.format(clientName, groupName))
+        if groupName in self.groups:
+            self.socket.send_string('YES')
+            # Say to all participants to subscribe the new client
+            clientsInCall = list(self.groups[groupName].keys())
+            for name in clientsInCall:
+                cl_sc = self.groups[groupName][name][0]
+                cl_sc.send_json({
+                    'op': 'subscribeToClient',
+                    'name': clientName,
+                    'ip': clientIp,
+                    'port': clientPort
+                })
+            # Adds the new client to the group call
+            self.groups[groupName][clientName] = self.clients[clientName]
+            print('SUCCESSFULLY JOINED.')
+        else:
+            print("THE CALL DOESNT EXIST")
+            self.socket.send_string('NO')
 
     def startGroupCall(self, request):
-        pass
+        print('\nStarting a group call')
+        self.groups[request['name'] + "'s_call"] = {
+            request['name']: self.clients[request['name']]
+        }
+        self.socket.send_string('ok')
+        client_sc = self.clients[request['name']][0]
+        client_sc.send_json({ 'op': 'serveGroupCall' })
+        client_sc.recv_string()
+        print('Group call started.')
 
     def addNewClient(self, request):
         print('\nAdding a new client: {}'.format(request['name']))
@@ -97,7 +127,7 @@ class Server:
         print('sent.')
 
 if __name__ == '__main__':
-    port = input('\nEnter the port listen port: ')
+    port = input('\nEnter the listen port: ')
     server = Server()
     server.start(port)
 
