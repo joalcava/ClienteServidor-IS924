@@ -4,6 +4,10 @@ import socket
 import threading
 import pyaudio
 
+CHUNK = 1024
+FORMAT = pyaudio.paInt16
+CHANNELS = 2
+RATE = 44100
 
 class Client:
 
@@ -11,13 +15,8 @@ class Client:
         self.context = zmq.Context()
         self.server_sc = self.context.socket(zmq.REQ)
         self.name = name
-
-        self.__ACCEPTCALLS = False
         self.__BUSY = False
-        self.__CHUNK = 1024  # 0.5KB
-        self.__FORMAT = pyaudio.paInt16
-        self.__CHANNELS = 2
-        self.__RATE = 44100
+        self.__ACCEPTCALLS = False
 
     def start(self, server_ip, server_port):
         self.server_sc.connect("tcp://{}:{}".format(server_ip, server_port))
@@ -43,32 +42,31 @@ class Client:
         socket = self.context.socket(zmq.REP)
         socket.bind("tcp://*:{}".format(port))
         pyAudio = pyaudio.PyAudio()
-        stream = pyAudio.open(format=self.__FORMAT,
-                              channels=self.__CHANNELS,
-                              rate=self.__RATE,
+        stream = pyAudio.open(format=FORMAT,
+                              channels=CHANNELS,
+                              rate=RATE,
                               output=True,
-                              frames_per_buffer=self.__CHUNK)
-        global BUSY
+                              frames_per_buffer=CHUNK)
         while True:
             request = socket.recv_json()
             if request['op'] == 'sendVoiceMessage':
                 print('Voice message recieved. Playing...')
                 for audio in request['audio']:
                     stream.write(audio.encode('UTF-16', 'ignore'))
-                    socket.send_string('ok')
-                    print('played.')
+                socket.send_string('ok')
+                print('played.')
             elif request['op'] == 'callRequest':
                 print('Incoming call from: {}'.format(request['from']))
                 if self.__ACCEPTCALLS:
                     socket.send_string('1')
                 else:
                     socket.send_string('0')
-                    print('accepted.' if self.__ACCEPTCALLS else 'rejected.')
+                print('accepted.' if self.__ACCEPTCALLS else 'rejected.')
             elif request['op'] == 'startCall':
                 if self.__BUSY:
                     print("I'M IS BUSY IN ANOTHER CALL")
                 else:
-                    BUSY = True
+                    self.__BUSY = True
                     client = self.context.socket(zmq.REQ)
                     client.connect(
                         "tcp://{}:{}".format(request['ip'], request['port']))
@@ -79,9 +77,9 @@ class Client:
                 stream.write(request['audio'].encode('UTF-16', 'ignore'))
             else:
                 print('invalid request recieved.')
-                stream.stop_stream()
-                stream.close()
-                pyAudio.terminate()
+        stream.stop_stream()
+        stream.close()
+        pyAudio.terminate()
 
     def clearScreen(self):
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -101,9 +99,9 @@ class Client:
             return (in_data, pyaudio.paContinue)
 
         input('Press <enter> to stop recording.')
-        stream = pyAudio.open(format=self.__FORMAT,
-                              channels=self.__CHANNELS,
-                              rate=self.__RATE,
+        stream = pyAudio.open(format=FORMAT,
+                              channels=CHANNELS,
+                              rate=RATE,
                               input=True,
                               stream_callback=callback)
         stream.start_stream()
@@ -134,17 +132,17 @@ class Client:
             result = 'Call accepted'
         else:
             result = 'Call rejected'
-            return result
+        return result
 
     def recordAndSend(self, client):
         pyAudio = pyaudio.PyAudio()
-        stream = pyAudio.open(format=self.__FORMAT,
-                              channels=self.__CHANNELS,
-                              rate=self.__RATE,
+        stream = pyAudio.open(format=FORMAT,
+                              channels=CHANNELS,
+                              rate=RATE,
                               input=True,
-                              frames_per_buffer=self.__CHUNK)
+                              frames_per_buffer=CHUNK)
         while True:
-            audio = stream.read(self.__CHUNK)  # exception_on_overflow ?
+            audio = stream.read(CHUNK)  # exception_on_overflow ?
             client.send_json(
                 {
                     'op': 'activeCallAudio',
@@ -152,9 +150,10 @@ class Client:
                 }
             )
             client.recv_string()
-            stream.stop_stream()
-            stream.close()
-            pyAudio.terminate()
+
+        stream.stop_stream()
+        stream.close()
+        pyAudio.terminate()
 
     def printOptions(self, callbackString=None):
         self.clearScreen()
@@ -186,6 +185,7 @@ class Client:
             return self.printOptions(message)
         else:
             return self.printOptions('-- INVALID OPTION !!.')
+
 
 if __name__ == '__main__':
     name = input('Enter your nickname: ')
